@@ -7,7 +7,6 @@ import (
 	"go.uber.org/zap/zapcore"
 	"net"
 	"strings"
-	"time"
 )
 
 //copy go.uber.org/zap/internal/color
@@ -38,29 +37,16 @@ const (
 	Timeformat  = "2006-01-02 15:04:05.000"
 )
 
-func main() {
-	agent := ZapLoggerAgent{}
-	logger := agent.Init(&LogAgentConf{
-		ServerName: "kak",
-		AgentAddr:  "192.168.1.7:8899",
-		ChanBuffer: 0,
-	}).Conn().Demons().Logger()
-	for {
-		logger.Sugar().Errorf("hello")
-		time.Sleep(time.Millisecond)
-	}
-
-}
-
 type LogAgent interface {
 	Write(p []byte) (n int, err error)
 	LogLevelStrToUint(text []byte) (uint16, error)
 	EnCode(payload []byte) []byte
 }
 type LogAgentConf struct {
-	ServerName string
-	AgentAddr  string
-	ChanBuffer int
+	ServerName  string
+	AgentAddr   string
+	ChanBuffer  int
+	EncoderConf *zapcore.EncoderConfig
 }
 type ZapLoggerAgent struct {
 	conf        *LogAgentConf
@@ -78,7 +64,6 @@ func (l *ZapLoggerAgent) Demons() *ZapLoggerAgent {
 			if err != nil {
 				panic(err)
 			}
-			fmt.Println(n)
 			if n != len(b) {
 				fmt.Println(err)
 			}
@@ -95,21 +80,23 @@ func (l *ZapLoggerAgent) Conn() *ZapLoggerAgent {
 	return l
 }
 func (l *ZapLoggerAgent) initLogger() *ZapLoggerAgent {
-	encoder := zapcore.EncoderConfig{
-		MessageKey:  "message",
-		LevelKey:    "level",
-		EncodeLevel: zapcore.CapitalColorLevelEncoder, // INFO
+	if l.conf.EncoderConf == nil {
+		l.conf.EncoderConf = &zapcore.EncoderConfig{
+			MessageKey:  "message",
+			LevelKey:    "level",
+			EncodeLevel: zapcore.CapitalColorLevelEncoder, // INFO
 
-		TimeKey:    "time",
-		EncodeTime: zapcore.TimeEncoderOfLayout(Timeformat),
+			TimeKey:    "time",
+			EncodeTime: zapcore.TimeEncoderOfLayout(Timeformat),
 
-		CallerKey:        "caller",
-		EncodeCaller:     zapcore.ShortCallerEncoder,
-		ConsoleSeparator: " ",
-		FunctionKey:      "func",
+			CallerKey:        "caller",
+			EncodeCaller:     zapcore.ShortCallerEncoder,
+			ConsoleSeparator: " ",
+			FunctionKey:      "func",
+		}
 	}
 
-	consoleEncode := zapcore.NewConsoleEncoder(encoder)
+	consoleEncode := zapcore.NewConsoleEncoder(*l.conf.EncoderConf)
 	w := zapcore.AddSync(l)
 	core := zapcore.NewCore(consoleEncode, w, zapcore.DebugLevel)
 	l.logger = zap.New(core, zap.AddCaller())
@@ -154,7 +141,7 @@ func (l *ZapLoggerAgent) Write(p []byte) (n int, err error) {
 
 	case l.bufferChan <- pkg:
 	default:
-		fmt.Printf(string(p), "asdads")
+		fmt.Printf(string(p))
 	}
 	return len(p), nil
 }
