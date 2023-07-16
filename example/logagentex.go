@@ -4,11 +4,10 @@ import (
 	"encoding/binary"
 	"fmt"
 	"go.uber.org/zap"
-	"time"
-
 	"go.uber.org/zap/zapcore"
 	"net"
 	"strings"
+	"time"
 )
 
 //copy go.uber.org/zap/internal/color
@@ -40,54 +39,64 @@ const (
 )
 
 func main() {
-
-	TestServer_OnOpen()
+	agent := ZapLoggerAgent{}
+	logger := agent.Init(&LogAgentConf{
+		ServerName: "kak",
+		AgentAddr:  "192.168.1.7:8899",
+		ChanBuffer: 0,
+	}).Conn().Demons().Logger()
+	for {
+		logger.Sugar().Errorf("hello")
+		time.Sleep(time.Millisecond)
+	}
 
 }
-
-var (
-	Chan         chan []byte
-	packetEndian = binary.LittleEndian
-)
 
 type LogAgent interface {
 	Write(p []byte) (n int, err error)
 	LogLevelStrToUint(text []byte) (uint16, error)
 	EnCode(payload []byte) []byte
 }
+type LogAgentConf struct {
+	ServerName string
+	AgentAddr  string
+	ChanBuffer int
+}
+type ZapLoggerAgent struct {
+	conf        *LogAgentConf
+	color       map[string]zapcore.Level
+	logger      *zap.Logger
+	bufferChan  chan []byte
+	c           net.Conn
+	encoderConf *zapcore.EncoderConfig
+}
 
-func TestServer_OnOpen() {
-	c, err := net.Dial("udp", ":8899")
-	if err != nil {
-		fmt.Println(err)
-	}
-	Chan = make(chan []byte, 10000)
-	logger := initLogger()
+func (l *ZapLoggerAgent) Demons() *ZapLoggerAgent {
 	go func() {
-		for {
-			//	logger.Sugar().Warn("haha")
-			logger.Sugar().Warn("haha")
-			time.Sleep(time.Millisecond)
+		for b := range l.bufferChan {
+			n, err := l.c.Write(b)
+			if err != nil {
+				panic(err)
+			}
+			fmt.Println(n)
+			if n != len(b) {
+				fmt.Println(err)
+			}
 		}
 	}()
-	go handler(c)
-	select {}
+	return l
 }
-func handler(c net.Conn) {
-	for b := range Chan {
-
-		n, err := c.Write(b)
-		if err != nil {
-			panic(err)
-		}
-		if n != len(b) {
-			fmt.Println(err)
-		}
+func (l *ZapLoggerAgent) Conn() *ZapLoggerAgent {
+	c, err := net.Dial("udp", l.conf.AgentAddr)
+	if err != nil {
+		panic(err)
 	}
+	l.c = c
+	return l
 }
-func initLogger() *zap.Logger {
+func (l *ZapLoggerAgent) initLogger() *ZapLoggerAgent {
 	encoder := zapcore.EncoderConfig{
-		MessageKey:  "M",
+		MessageKey:  "message",
 		LevelKey:    "level",
 		EncodeLevel: zapcore.CapitalColorLevelEncoder, // INFO
 
@@ -98,23 +107,25 @@ func initLogger() *zap.Logger {
 		EncodeCaller:     zapcore.ShortCallerEncoder,
 		ConsoleSeparator: " ",
 		FunctionKey:      "func",
-		NameKey:          "N",
 	}
 
 	consoleEncode := zapcore.NewConsoleEncoder(encoder)
-	//consoleEncode.AddString("server", "TESTSERVER")
-	w := zapcore.AddSync(new(ZapLoggerAgent).init("AKJZJ"))
+	w := zapcore.AddSync(l)
 	core := zapcore.NewCore(consoleEncode, w, zapcore.DebugLevel)
-	return zap.New(core, zap.AddCaller())
+	l.logger = zap.New(core, zap.AddCaller())
+	return l
 }
-
-type ZapLoggerAgent struct {
-	ServerName string
-	color      map[string]zapcore.Level
-}
-
-func (l *ZapLoggerAgent) init(server string) *ZapLoggerAgent {
-	l.ServerName = server
+func (l *ZapLoggerAgent) Init(config *LogAgentConf) *ZapLoggerAgent {
+	if config == nil {
+		panic("config nil")
+	}
+	if config.ServerName == "" {
+		panic("ServerName invalid")
+	}
+	if config.AgentAddr == "" {
+		panic("AgentAddr invalid")
+	}
+	l.conf = config
 	l.color = map[string]zapcore.Level{}
 	debug := zapcore.DebugLevel.CapitalString()
 	info := zapcore.InfoLevel.CapitalString()
@@ -130,12 +141,18 @@ func (l *ZapLoggerAgent) init(server string) *ZapLoggerAgent {
 	l.color[Red.Add(dPanic)] = zapcore.DPanicLevel
 	l.color[Red.Add(pan)] = zapcore.PanicLevel
 	l.color[Red.Add(fatal)] = zapcore.FatalLevel
+	l.initLogger()
+	if l.conf.ChanBuffer == 0 {
+		l.conf.ChanBuffer = 1024
+	}
+	l.bufferChan = make(chan []byte, l.conf.ChanBuffer)
 	return l
 }
 func (l *ZapLoggerAgent) Write(p []byte) (n int, err error) {
 	pkg := l.EnCode(p)
 	select {
-	case Chan <- pkg:
+
+	case l.bufferChan <- pkg:
 	default:
 		fmt.Printf(string(p), "asdads")
 	}
@@ -143,20 +160,20 @@ func (l *ZapLoggerAgent) Write(p []byte) (n int, err error) {
 }
 
 func (l *ZapLoggerAgent) EnCode(payload []byte) []byte {
-	if l.ServerName == "" {
+	if l.conf.ServerName == "" {
 		panic("ServerName invalid")
 	}
 
-	hl := uint32(len(l.ServerName)) + logLevelLen
+	hl := uint32(len(l.conf.ServerName)) + logLevelLen
 	buf := make([]byte, uint32(len(payload))+hl+headerLen)
-	packetEndian.PutUint32(buf, hl)
-	packetEndian.PutUint16(buf[headerLen:], l.LogLevelStrToUint(payload))
-	copy(buf[headerLen+logLevelLen:], l.ServerName)
+	binary.LittleEndian.PutUint32(buf, hl)
+	binary.LittleEndian.PutUint16(buf[headerLen:], l.logLevelStrToUint(payload))
+	copy(buf[headerLen+logLevelLen:], l.conf.ServerName)
 	copy(buf[headerLen+hl:], payload)
 
 	return buf
 }
-func (l *ZapLoggerAgent) LogLevelStrToUint(text []byte) uint16 {
+func (l *ZapLoggerAgent) logLevelStrToUint(text []byte) uint16 {
 	timeLen := len(Timeformat)
 	s := strings.Builder{}
 	//timeLen+16 防止遍历整个text
@@ -169,4 +186,8 @@ func (l *ZapLoggerAgent) LogLevelStrToUint(text []byte) uint16 {
 	le := l.color[s.String()]
 	le++ //zapcore.DebugLevel value -1 but to convert uint16,so +1
 	return uint16(le)
+}
+
+func (l *ZapLoggerAgent) Logger() *zap.Logger {
+	return l.logger
 }

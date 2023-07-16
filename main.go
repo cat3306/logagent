@@ -37,7 +37,6 @@ func (s *Server) OnTraffic(c gnet.Conn) gnet.Action {
 }
 func (s *Server) handlerLog(buf []byte) {
 	ctx := Decode(buf)
-	fmt.Println(s.getLogLevel(ctx.LogLevel))
 	s.writeIO(ctx)
 }
 func (s *Server) writeIO(ctx *Context) {
@@ -54,14 +53,12 @@ func (s *Server) writeIO(ctx *Context) {
 			LocalTime:  true,
 		}
 		s.fileMap[ctx.ServerName] = lumberJackLogger
-		fmt.Println("hahahhaha")
 	}
 
 	n, err := lumberJackLogger.Write(ctx.Payload)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(ctx.ServerName, ctx.LogLevel)
 	if n != len(ctx.Payload) {
 		Logger.Sugar().Warn(n, len(ctx.Payload))
 	}
