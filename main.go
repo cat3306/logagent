@@ -2,10 +2,9 @@ package main
 
 import (
 	"cloud/logagent/conf"
-	"cloud/logagent/util"
 	"fmt"
 	"github.com/panjf2000/gnet/v2"
-	"os"
+	"gopkg.in/natefinch/lumberjack.v2"
 	"path"
 )
 
@@ -16,7 +15,7 @@ const (
 type Server struct {
 	gnet.BuiltinEventEngine
 	eng     gnet.Engine
-	fileMap map[string]*os.File
+	fileMap map[string]*lumberjack.Logger
 }
 
 func (s *Server) OnBoot(e gnet.Engine) (action gnet.Action) {
@@ -43,26 +42,28 @@ func (s *Server) handlerLog(buf []byte) {
 }
 func (s *Server) writeIO(ctx *Context) {
 	lvl := s.getLogLevel(ctx.LogLevel)
-	file := path.Join(conf.AppConf.LogFilePath, ctx.ServerName+"_"+lvl)
-	f := s.fileMap[ctx.ServerName]
-	var err error
-	if f == nil {
-		f, err = os.OpenFile(file+".log", os.O_RDWR|os.O_APPEND|os.O_CREATE, fileMod)
-		if err != nil {
-			Logger.Sugar().Infof("os.OpenFile err:%s", err.Error())
-			return
+	file := path.Join(conf.AppConf.LogFilePath, ctx.ServerName+"_"+lvl+".log")
+	lumberJackLogger, ok := s.fileMap[ctx.ServerName]
+	if !ok {
+		lumberJackLogger = &lumberjack.Logger{
+			Filename:   file,                    // 文件位置
+			MaxSize:    conf.AppConf.MaxSize,    // 进行切割之前,日志文件的最大大小(MB为单位)
+			MaxAge:     conf.AppConf.MaxAge,     // 保留旧文件的最大天数
+			MaxBackups: conf.AppConf.MaxBackups, // 保留旧文件的最大个数
+			Compress:   conf.AppConf.Compress,   // 是否压缩/归档旧文件
+			LocalTime:  true,
 		}
-		s.fileMap[ctx.ServerName] = f
+		s.fileMap[ctx.ServerName] = lumberJackLogger
+		fmt.Println("hahahhaha")
 	}
 
-	n, err := fmt.Fprint(f, util.BytesToString(ctx.Payload))
+	n, err := lumberJackLogger.Write(ctx.Payload)
 	if err != nil {
-		Logger.Sugar().Infof("f.Write err:%s", err.Error())
-		return
+		panic(err)
 	}
 	fmt.Println(ctx.ServerName, ctx.LogLevel)
 	if n != len(ctx.Payload) {
-		//Logger.Sugar().Warn(n, len(text))
+		Logger.Sugar().Warn(n, len(ctx.Payload))
 	}
 }
 func (s *Server) OnClose(c gnet.Conn, err error) (action gnet.Action) {
@@ -113,7 +114,7 @@ func main() {
 	InitLog()
 	conf.Init()
 	s := Server{
-		fileMap: map[string]*os.File{},
+		fileMap: map[string]*lumberjack.Logger{},
 	}
 	s.Run()
 }

@@ -9,6 +9,11 @@ import (
 type GlobalConf struct {
 	Port        string `json:"port"`
 	LogFilePath string `json:"log_file_path"`
+
+	MaxSize    int  `json:"max_size"`    // 日志文件的最大大小(MB为单位)
+	MaxAge     int  `json:"max_age"`     // 保留旧文件的最大天数
+	MaxBackups int  `json:"max_backups"` // 保留旧文件的最大个数
+	Compress   bool `json:"compress"`    // 是否压缩/归档旧文件
 }
 
 var AppConf *GlobalConf

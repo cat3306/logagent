@@ -9,7 +9,12 @@ import (
 
 func TestGen(t *testing.T) {
 	c := GlobalConf{
-		Port: "8869",
+		Port:        "8899",
+		LogFilePath: "/Users/joker/code/go/src/cloud/logagent/",
+		MaxSize:     1,
+		MaxAge:      7,
+		MaxBackups:  3,
+		Compress:    true,
 	}
 	raw, err := json.Marshal(c)
 	if err != nil {

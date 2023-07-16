@@ -4,11 +4,11 @@ import (
 	"encoding/binary"
 	"fmt"
 	"go.uber.org/zap"
+	"time"
 
 	"go.uber.org/zap/zapcore"
 	"net"
 	"strings"
-	"time"
 )
 
 //copy go.uber.org/zap/internal/color
@@ -67,7 +67,7 @@ func TestServer_OnOpen() {
 		for {
 			//	logger.Sugar().Warn("haha")
 			logger.Sugar().Warn("haha")
-			time.Sleep(time.Millisecond * 1000)
+			time.Sleep(time.Millisecond)
 		}
 	}()
 	go handler(c)
