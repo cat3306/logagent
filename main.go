@@ -3,7 +3,6 @@ package main
 import (
 	"cloud/logagent/conf"
 	"cloud/logagent/util"
-	"encoding/json"
 	"fmt"
 	"github.com/panjf2000/gnet/v2"
 	"os"
@@ -14,9 +13,6 @@ const (
 	fileMod = 0644
 )
 
-type ServerInfo struct {
-	Server string `json:"server"`
-}
 type Server struct {
 	gnet.BuiltinEventEngine
 	eng     gnet.Engine
@@ -37,51 +33,18 @@ func (s *Server) OnTraffic(c gnet.Conn) gnet.Action {
 	}
 
 	s.handlerLog(buf)
+
 	return gnet.None
 }
 func (s *Server) handlerLog(buf []byte) {
-	//logSrc := util.BytesToString(buf)
-	//fmt.Printf(logSrc)
-	split := func(s []byte) (ok bool, s1 []byte, s2 []byte) {
-		max := 64
-		//fmt.Println(string(s[len(s)-2]))
-		if s[len(buf)-2] == '}' {
-			i := len(buf) - 1
-			cnt := 0
-			for ; i >= 0; i-- {
-				if cnt >= max {
-					return
-				}
-				if buf[i] == '{' {
-					ok = true
-					s1 = s[:i]
-					s2 = s[i : len(buf)-1]
-					fmt.Println(cnt)
-					return
-				}
-				cnt++
-			}
-			return
-		}
-		return
-	}
-
-	ok, log, server := split(buf)
-	if !ok {
-		return
-	}
-	info := &ServerInfo{}
-	err := json.Unmarshal(server, info)
-	if err != nil {
-		return
-	}
-	fmt.Println(info.Server)
-	fmt.Println(string(log))
-	s.writeIO(info.Server, log)
+	ctx := Decode(buf)
+	fmt.Println(s.getLogLevel(ctx.LogLevel))
+	s.writeIO(ctx)
 }
-func (s *Server) writeIO(fileName string, text []byte) {
-	file := path.Join(conf.AppConf.LogFilePath, fileName)
-	f := s.fileMap[fileName]
+func (s *Server) writeIO(ctx *Context) {
+	lvl := s.getLogLevel(ctx.LogLevel)
+	file := path.Join(conf.AppConf.LogFilePath, ctx.ServerName+"_"+lvl)
+	f := s.fileMap[ctx.ServerName]
 	var err error
 	if f == nil {
 		f, err = os.OpenFile(file+".log", os.O_RDWR|os.O_APPEND|os.O_CREATE, fileMod)
@@ -89,16 +52,17 @@ func (s *Server) writeIO(fileName string, text []byte) {
 			Logger.Sugar().Infof("os.OpenFile err:%s", err.Error())
 			return
 		}
-		s.fileMap[fileName] = f
+		s.fileMap[ctx.ServerName] = f
 	}
 
-	n, err := fmt.Fprintln(f, util.BytesToString(text))
+	n, err := fmt.Fprint(f, util.BytesToString(ctx.Payload))
 	if err != nil {
 		Logger.Sugar().Infof("f.Write err:%s", err.Error())
 		return
 	}
-	if n != len(text) {
-		Logger.Sugar().Warn(n, len(text))
+	fmt.Println(ctx.ServerName, ctx.LogLevel)
+	if n != len(ctx.Payload) {
+		//Logger.Sugar().Warn(n, len(text))
 	}
 }
 func (s *Server) OnClose(c gnet.Conn, err error) (action gnet.Action) {
@@ -122,6 +86,28 @@ func (s *Server) Run() {
 		panic(err)
 	}
 	f()
+}
+func (s *Server) getLogLevel(l uint16) string {
+
+	switch l {
+	case DebugLevel:
+		return "DEBUG"
+	case InfoLevel:
+		return "INFO"
+	case WarnLevel:
+		return "WARN"
+	case ErrorLevel:
+		return "ERROR"
+	case DPanicLevel:
+		return "DPANIC"
+	case PanicLevel:
+		return "PANIC"
+	case FatalLevel:
+		return "FATAL"
+	default:
+		return ""
+	}
+
 }
 func main() {
 	InitLog()
