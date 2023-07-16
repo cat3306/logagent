@@ -16,6 +16,7 @@ type Server struct {
 	gnet.BuiltinEventEngine
 	eng     gnet.Engine
 	fileMap map[string]*lumberjack.Logger
+
 }
 
 func (s *Server) OnBoot(e gnet.Engine) (action gnet.Action) {
@@ -37,11 +38,13 @@ func (s *Server) OnTraffic(c gnet.Conn) gnet.Action {
 }
 func (s *Server) handlerLog(buf []byte) {
 	ctx := Decode(buf)
+
 	s.writeIO(ctx)
 }
 func (s *Server) writeIO(ctx *Context) {
 	lvl := s.getLogLevel(ctx.LogLevel)
-	file := path.Join(conf.AppConf.LogFilePath, ctx.ServerName+"_"+lvl+".log")
+	ctx.ServerName = ctx.ServerName + "_" + lvl + ".log"
+	file := path.Join(conf.AppConf.LogFilePath, ctx.ServerName)
 	lumberJackLogger, ok := s.fileMap[ctx.ServerName]
 	if !ok {
 		lumberJackLogger = &lumberjack.Logger{
