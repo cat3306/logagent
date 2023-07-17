@@ -55,17 +55,16 @@ type ZapLoggerAgent struct {
 	bufferChan  chan []byte
 	c           net.Conn
 	encoderConf *zapcore.EncoderConfig
+	offlineMode bool
 }
 
 func (l *ZapLoggerAgent) Demons() *ZapLoggerAgent {
 	go func() {
 		for b := range l.bufferChan {
-			n, err := l.c.Write(b)
+			_, err := l.c.Write(b)
 			if err != nil {
-				panic(err)
-			}
-			if n != len(b) {
-				fmt.Println(err)
+				fmt.Printf(string(b))
+				continue
 			}
 		}
 	}()
@@ -74,7 +73,9 @@ func (l *ZapLoggerAgent) Demons() *ZapLoggerAgent {
 func (l *ZapLoggerAgent) Conn() *ZapLoggerAgent {
 	c, err := net.Dial("udp", l.conf.AgentAddr)
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		l.offlineMode = true
+		return l
 	}
 	l.c = c
 	return l
@@ -136,6 +137,10 @@ func (l *ZapLoggerAgent) Init(config *LogAgentConf) *ZapLoggerAgent {
 	return l
 }
 func (l *ZapLoggerAgent) Write(p []byte) (n int, err error) {
+	if l.offlineMode {
+		fmt.Printf(string(p))
+		return len(p), nil
+	}
 	pkg := l.EnCode(p)
 	select {
 

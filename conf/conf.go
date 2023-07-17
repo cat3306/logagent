@@ -20,7 +20,7 @@ var AppConf *GlobalConf
 
 func Init() {
 	var file string
-	flag.StringVar(&file, "c", "", "use -c to bind conf file")
+	flag.StringVar(&file, "c", "conf.json", "use -c to bind conf file")
 	flag.Parse()
 	appConf := new(GlobalConf)
 	err := LoadJsonConfigLocal(file, appConf)
