@@ -2,10 +2,13 @@ package main
 
 import (
 	"cloud/logagent/conf"
+	"cloud/logagent/util"
 	"fmt"
 	"github.com/panjf2000/gnet/v2"
+	"github.com/panjf2000/gnet/v2/pkg/pool/goroutine"
 	"gopkg.in/natefinch/lumberjack.v2"
 	"path"
+	"sync"
 )
 
 const (
@@ -14,9 +17,13 @@ const (
 
 type Server struct {
 	gnet.BuiltinEventEngine
-	eng     gnet.Engine
-	fileMap map[string]*lumberjack.Logger
-
+	eng        gnet.Engine
+	fileMap    map[string]*lumberjack.Logger
+	locker     sync.RWMutex
+	gPool      *goroutine.Pool
+	errMsgChan chan *errMsg
+	errMsgMap  map[string][]string
+	capMsg     int
 }
 
 func (s *Server) OnBoot(e gnet.Engine) (action gnet.Action) {
@@ -41,11 +48,22 @@ func (s *Server) handlerLog(buf []byte) {
 
 	s.writeIO(ctx)
 }
+func (s *Server) getLogger(fileName string) (*lumberjack.Logger, bool) {
+	s.locker.RLock()
+	defer s.locker.RUnlock()
+	lg, ok := s.fileMap[fileName]
+	return lg, ok
+}
+func (s *Server) setLogger(fileName string, lg *lumberjack.Logger) {
+	s.locker.Lock()
+	defer s.locker.Unlock()
+	s.fileMap[fileName] = lg
+}
 func (s *Server) writeIO(ctx *Context) {
 	lvl := s.getLogLevel(ctx.LogLevel)
-	ctx.ServerName = ctx.ServerName + "_" + lvl + ".log"
-	file := path.Join(conf.AppConf.LogFilePath, ctx.ServerName)
-	lumberJackLogger, ok := s.fileMap[ctx.ServerName]
+	serverName := ctx.ServerName + "_" + lvl + ".log"
+	file := path.Join(conf.AppConf.LogFilePath, serverName)
+	lumberJackLogger, ok := s.getLogger(serverName)
 	if !ok {
 		lumberJackLogger = &lumberjack.Logger{
 			Filename:   file,                    // 文件位置
@@ -55,15 +73,42 @@ func (s *Server) writeIO(ctx *Context) {
 			Compress:   conf.AppConf.Compress,   // 是否压缩/归档旧文件
 			LocalTime:  true,
 		}
-		s.fileMap[ctx.ServerName] = lumberJackLogger
+		s.setLogger(serverName, lumberJackLogger)
 	}
-
-	n, err := lumberJackLogger.Write(ctx.Payload)
-	if err != nil {
-		panic(err)
+	payload := ctx.Payload
+	if conf.AppConf.UseGPool {
+		payload = make([]byte, len(ctx.Payload))
+		copy(payload, ctx.Payload)
 	}
-	if n != len(ctx.Payload) {
-		Logger.Sugar().Warn(n, len(ctx.Payload))
+	f := func() {
+		n, err := lumberJackLogger.Write(payload)
+		if err != nil {
+			Logger.Sugar().Errorf("err:%s", err.Error())
+			return
+		}
+		if n != len(payload) {
+			Logger.Sugar().Warn(n, len(payload))
+		}
+	}
+	if conf.AppConf.UseGPool {
+		if ctx.LogLevel == ErrorLevel {
+			s.errMsgChan <- &errMsg{
+				text:       util.BytesToString(payload),
+				serverName: ctx.ServerName,
+			}
+		}
+		err := s.gPool.Submit(f)
+		if err != nil {
+			Logger.Sugar().Errorf("writeIO err:%s", err.Error())
+		}
+	} else {
+		if ctx.LogLevel == ErrorLevel {
+			s.errMsgChan <- &errMsg{
+				text:       string(payload), //copy
+				serverName: ctx.ServerName,
+			}
+		}
+		f()
 	}
 }
 func (s *Server) OnClose(c gnet.Conn, err error) (action gnet.Action) {
@@ -114,7 +159,12 @@ func main() {
 	InitLog()
 	conf.Init()
 	s := Server{
-		fileMap: map[string]*lumberjack.Logger{},
+		fileMap:    map[string]*lumberjack.Logger{},
+		gPool:      goroutine.Default(),
+		errMsgChan: make(chan *errMsg, 1024),
+		errMsgMap:  make(map[string][]string),
+		capMsg:     64,
 	}
+	go s.handleErrMsg()
 	s.Run()
 }

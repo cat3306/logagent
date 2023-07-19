@@ -1,8 +1,11 @@
 {
   "port": "8899",
-  "log_file_path": "/Users/joker/code/go/src/cloud/logagent/",
-  "max_size": 1,
+  "log_file_path": "/Users/joker/Documents/testlog/",
+  "max_size": 100,
   "max_age": 7,
   "max_backups": 4,
-  "compress": true
+  "compress": true,
+  "use_g_pool": true,
+  "notification_url": "https://oapi.dingtalk.com/robot/send?access_token=479c04062617f47a3a081337ab2d1a1edac219c585ed5c2ea129b342b8c59141",
+  "name_space": "local"
 }
