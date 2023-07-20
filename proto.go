@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cloud/logagent/util"
 	"encoding/binary"
 )
 
@@ -28,9 +27,11 @@ func Decode(buf []byte) *Context {
 	payload := buf[hLen+headerLen:]
 	logLevel := packetEndian.Uint16(header[:logLevelLen])
 	serverName := header[logLevelLen:]
+	copyPayload := make([]byte, len(payload))
+	copy(copyPayload, payload)
 	return &Context{
 		LogLevel:   logLevel,
-		ServerName: util.BytesToString(serverName),
-		Payload:    payload,
+		ServerName: string(serverName), //copy
+		Payload:    copyPayload,        //copy
 	}
 }
