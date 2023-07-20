@@ -2,6 +2,7 @@ package main
 
 import (
 	"cloud/logagent/conf"
+	"cloud/logagent/internal"
 	"fmt"
 	"github.com/panjf2000/gnet/v2"
 	"github.com/panjf2000/gnet/v2/pkg/pool/goroutine"
@@ -20,7 +21,7 @@ type Server struct {
 	fileMap      map[string]*lumberjack.Logger
 	locker       sync.RWMutex
 	gPool        *goroutine.Pool
-	errMsgChan   chan *Context
+	errMsgChan   chan *errMsg
 	errMsgMap    map[string][]string
 	capMsg       int
 	m            map[string]int
@@ -80,7 +81,7 @@ func (s *Server) writeIO(ctx *Context) {
 		}
 		s.setLogger(serverName, lumberJackLogger)
 	}
-	payload := ctx.Payload
+	payload := ctx.Payload[:ctx.PayloadLen]
 	f := func() {
 		n, err := lumberJackLogger.Write(payload)
 		if err != nil {
@@ -92,9 +93,13 @@ func (s *Server) writeIO(ctx *Context) {
 		}
 	}
 	if ctx.LogLevel == ErrorLevel {
-		s.errMsgChan <- ctx
+		s.errMsgChan <- &errMsg{
+			serverName: ctx.ServerName,
+			text:       string(payload),
+		}
 	}
 	f()
+	internal.BUFFERPOOL.Put(ctx.Payload)
 }
 func (s *Server) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 
@@ -151,7 +156,7 @@ func main() {
 	s := Server{
 		fileMap:      map[string]*lumberjack.Logger{},
 		gPool:        goroutine.Default(),
-		errMsgChan:   make(chan *Context, 1024),
+		errMsgChan:   make(chan *errMsg, 1024),
 		errMsgMap:    make(map[string][]string),
 		capMsg:       64,
 		m:            map[string]int{},

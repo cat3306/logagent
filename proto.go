@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cloud/logagent/internal"
 	"encoding/binary"
 )
 
@@ -16,9 +17,10 @@ var (
 )
 
 type Context struct {
-	LogLevel   uint16
-	ServerName string
-	Payload    []byte
+	LogLevel     uint16
+	ServerName   string
+	Payload      []byte
+	PayloadLen   int
 }
 
 func Decode(buf []byte) *Context {
@@ -27,11 +29,13 @@ func Decode(buf []byte) *Context {
 	payload := buf[hLen+headerLen:]
 	logLevel := packetEndian.Uint16(header[:logLevelLen])
 	serverName := header[logLevelLen:]
-	copyPayload := make([]byte, len(payload))
-	copy(copyPayload, payload)
+
+	copyPayload := internal.BUFFERPOOL.Get(uint32(len(payload)))
+	copy(*copyPayload, payload)
 	return &Context{
 		LogLevel:   logLevel,
 		ServerName: string(serverName), //copy
-		Payload:    copyPayload,        //copy
+		Payload:    *copyPayload,       //copy
+		PayloadLen: len(payload),
 	}
 }

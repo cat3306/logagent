@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"cloud/logagent/conf"
-	"cloud/logagent/util"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -12,18 +11,23 @@ import (
 	"time"
 )
 
+type errMsg struct {
+	serverName string
+	text       string
+}
+
 func (s *Server) handleErrMsg() {
 	for item := range s.errMsgChan {
-		list, ok := s.errMsgMap[item.ServerName]
+		list, ok := s.errMsgMap[item.serverName]
 		if !ok {
 			list = make([]string, 0, s.capMsg)
 		}
-		list = append(list, util.BytesToString(item.Payload))
+		list = append(list, item.text)
 		if len(list) >= s.capMsg {
-			s.sendMsg(list, item.ServerName)
+			s.sendMsg(list, item.serverName)
 			list = list[0:0]
 		}
-		s.errMsgMap[item.ServerName] = list
+		s.errMsgMap[item.serverName] = list
 	}
 }
 
