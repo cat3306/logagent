@@ -4,11 +4,12 @@ import (
 	"cloud/logagent/conf"
 	"cloud/logagent/internal"
 	"fmt"
+	"path"
+	"sync"
+
 	"github.com/panjf2000/gnet/v2"
 	"github.com/panjf2000/gnet/v2/pkg/pool/goroutine"
 	"gopkg.in/natefinch/lumberjack.v2"
-	"path"
-	"sync"
 )
 
 const (
@@ -92,12 +93,13 @@ func (s *Server) writeIO(ctx *Context) {
 			Logger.Sugar().Warn(n, len(payload))
 		}
 	}
-	if ctx.LogLevel == ErrorLevel {
-		s.errMsgChan <- &errMsg{
-			serverName: ctx.ServerName,
-			text:       string(payload),
-		}
-	}
+	// if ctx.LogLevel == ErrorLevel {
+	// 	s.errMsgChan <- &errMsg{
+	// 		serverName: ctx.ServerName,
+	// 		text:       string(payload),
+	// 	}
+	// }
+	//不发钉钉消息了
 	f()
 	internal.BUFFERPOOL.Put(ctx.Payload)
 }
